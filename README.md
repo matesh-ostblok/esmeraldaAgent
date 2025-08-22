@@ -10,7 +10,6 @@ The following variables must be defined (for example via a `.env` file):
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
 - `QDRANT_URL`
-- `QDRANT_API_KEY`
 - `QDRANT_COLLECTION`
 
 ## Usage
