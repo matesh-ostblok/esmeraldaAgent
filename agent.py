@@ -90,6 +90,20 @@ def save_message(session_id: str, role: str, content: str) -> None:
         # Nezastavuj beh agenta kvôli logovaniu
         print(f"[Supabase] Insert error: {e}")
 
+def save_token_usage(session_id: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    """
+    Uloží token usage do public.tokenUsage v Supabase.
+    """
+    try:
+        sb.table("tokenUsage").insert({
+            "session_id": session_id,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }).execute()
+    except Exception as e:
+        print(f"[Supabase] Token usage insert error: {e}")
+
 # --- Agent: používa len tool výstupy ---
 esmeralda = Agent(
     name="Esmeralda",
@@ -100,8 +114,7 @@ esmeralda = Agent(
         "Odpovedaj v konverzčnom štýle."
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
         "Otázku používateľa rozlož semanticky na maximálne 5 menších fráz (2–7 slov), ktoré jednotlivo posielaj do searchLaw."
-        "Užívateľ sa volá {{name}}."
-    ),
+    ).format(name="{name}"),
 
     tools=[search_law],
 )
@@ -123,6 +136,13 @@ async def run_once(session_id: str, name: str, prompt: str):
     assistant_text = "".join(buf)
     if assistant_text.strip():
         save_message(session_id, "assistant", assistant_text)
+    try:
+        usage = result.response.output[0].usage
+        input_tokens = usage.input_tokens
+        output_tokens = usage.output_tokens
+        save_token_usage(session_id, esmeralda.model, input_tokens, output_tokens)
+    except Exception as e:
+        print(f"[Token Usage] Could not save token usage: {e}")
 
 if __name__ == "__main__":
     import sys
@@ -130,6 +150,7 @@ if __name__ == "__main__":
         session_id = sys.argv[1]
         name = sys.argv[2]
         prompt = " ".join(sys.argv[3:])
+        esmeralda.instructions = esmeralda.instructions.format(name=name)
         asyncio.run(run_once(session_id, name, prompt))
     else:
         print("Použitie: python agent.py <session_id> <name> <prompt>")
