@@ -111,7 +111,7 @@ esmeralda = Agent(
     instructions=(
         "Si právna asistentka pre SR. Odpovedaj VÝHRADNE z výsledkov nástroja search_law."
         "Ak nástroj nič použiteľné nevráti, povedz: Nenašiel som relevantné informácie."
-        "Odpovedaj v konverzčnom štýle."
+        "Odpovedaj v konverzčnom štýle. Nepoužívaj odrážky. Číslovanie pužívaj pri krokoch"
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
         "Otázku používateľa rozlož semanticky na maximálne 5 menších fráz (2–7 slov), ktoré jednotlivo posielaj do searchLaw."
     ).format(name="{name}"),
@@ -125,24 +125,33 @@ async def run_once(session_id: str, name: str, prompt: str):
     save_message(session_id, "user", prompt)
     result = Runner.run_streamed(esmeralda, input=prompt)
     buf = []
+    usage = None
     async for ev in result.stream_events():
-        # Streamujeme len textové delty
-        from openai.types.responses import ResponseTextDeltaEvent
+        # Streamujeme len textové delty a zachytíme completed event s usage
+        from openai.types.responses import ResponseTextDeltaEvent, ResponseCompletedEvent
         if ev.type == "raw_response_event" and isinstance(ev.data, ResponseTextDeltaEvent):
             piece = ev.data.delta or ""
             buf.append(piece)
             print(piece, end="", flush=True)
+        elif ev.type == "response.completed":
+            try:
+                usage = ev.data.response.output[0].usage
+            except Exception as e:
+                print(f"[Token Usage] Parse error: {e}")
     print()  # newline
     assistant_text = "".join(buf)
     if assistant_text.strip():
         save_message(session_id, "assistant", assistant_text)
-    try:
-        usage = result.response.output[0].usage
-        input_tokens = usage.input_tokens
-        output_tokens = usage.output_tokens
-        save_token_usage(session_id, esmeralda.model, input_tokens, output_tokens)
-    except Exception as e:
-        print(f"[Token Usage] Could not save token usage: {e}")
+    if usage:
+        try:
+            input_tokens = getattr(usage, "input_tokens", None)
+            output_tokens = getattr(usage, "output_tokens", None)
+            if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+                save_token_usage(session_id, esmeralda.model, input_tokens, output_tokens)
+            else:
+                print(f"[Token Usage] Missing fields in usage: {usage}")
+        except Exception as e:
+            print(f"[Token Usage] Could not save token usage: {e}")
 
 if __name__ == "__main__":
     import sys
