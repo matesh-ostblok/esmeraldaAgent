@@ -128,7 +128,7 @@ esmeralda = Agent(
     name="Esmeralda",
     model="gpt-5-mini",
     instructions=(
-        "Si právna asistentka pre SR. Odpovedaj VÝHRADNE z výsledkov nástroja search_law."
+        "Si právna asistentka pre SR. Použi nástroj search_law, ak je to relevantné, inak odpovedz priamo."
         "Ak nástroj nič použiteľné nevráti, povedz: Nenašiel som relevantné informácie."
         "Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nepoužívaj odrážky ani číslovanie."
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
