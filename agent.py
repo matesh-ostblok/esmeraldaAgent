@@ -104,6 +104,25 @@ def save_token_usage(session_id: str, model: str, input_tokens: int, output_toke
     except Exception as e:
         print(f"[Supabase] Token usage insert error: {e}")
 
+def fetch_memory(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Načíta posledných `limit` správ zo session a vráti ich v chronologickom poradí (najstaršia -> najnovšia).
+    """
+    try:
+        resp = sb.table("chatMessages")\
+            .select("role,content,created_at")\
+            .eq("session_id", session_id)\
+            .order("created_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        rows = (getattr(resp, "data", None) or [])
+        # otoč na chronologické poradie
+        rows.reverse()
+        return rows
+    except Exception as e:
+        print(f"[Supabase] Fetch memory error: {e}")
+        return []
+
 # --- Agent: používa len tool výstupy ---
 esmeralda = Agent(
     name="Esmeralda",
@@ -123,7 +142,14 @@ esmeralda = Agent(
 async def run_once(session_id: str, name: str, prompt: str):
     print(f"[Session: {session_id}] [User: {name}] -> {prompt}")
     save_message(session_id, "user", prompt)
-    result = Runner.run_streamed(esmeralda, input=prompt)
+    # Načítaj posledných 5 správ ako pamäť konverzácie
+    mem_rows = fetch_memory(session_id, limit=10)
+    if mem_rows:
+        memory_block = "\n".join([f"{r['role']}: {r['content']}" for r in mem_rows])
+        enriched_input = f"[MEMORY]\n{memory_block}\n[/MEMORY]\n\n[USER QUESTION]\n{prompt}"
+    else:
+        enriched_input = prompt
+    result = Runner.run_streamed(esmeralda, input=enriched_input)
     buf = []
     usage = None
     async for ev in result.stream_events():
