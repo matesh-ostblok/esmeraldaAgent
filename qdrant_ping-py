@@ -1,0 +1,41 @@
+# qdrant_ping.py
+import os
+import time
+from dotenv import load_dotenv
+from qdrant_client import QdrantClient
+from openai import OpenAI
+
+load_dotenv()
+
+# Inicializácia klientov
+qdr = QdrantClient(url=os.environ["QDRANT_URL"])
+oi = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+COLLECTION = os.environ.get("QDRANT_COLLECTION", "esmeralda")
+
+def embed(text: str):
+    r = oi.embeddings.create(model="text-embedding-3-small", input=text)
+    return r.data[0].embedding
+
+def main():
+    query = "Koľko rokov musím mať aby som mohol jazdiť na motorke?"
+    vector = embed(query)
+
+    start = time.time()
+    res = qdr.query_points(
+        collection_name=COLLECTION,
+        query=vector,
+        limit=1,
+        with_payload=True,
+        with_vectors=False,
+        timeout=120,
+    )
+    duration = time.time() - start
+
+    print(f"Query: {query}")
+    print(f"Duration: {duration:.3f} sec")
+    for p in res.points:
+        print(f"ID: {p.id}, SCORE: {p.score}")
+        print(f"Payload: {p.payload}")
+
+if __name__ == "__main__":
+    main()
