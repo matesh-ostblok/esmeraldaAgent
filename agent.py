@@ -13,6 +13,12 @@ from agents import Agent, Runner, function_tool, set_default_openai_key  # Agent
 from qdrant_client import QdrantClient
 from supabase import create_client, Client
 
+# --- Usage accumulators (per-run) ---
+usage_counters = {
+    "embedding_tokens": 0,
+    "embedding_model": "text-embedding-3-small",
+}
+
 # --- OpenAI & Qdrant klienti ---
 oi = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 # Qdrant nastavenia
@@ -31,6 +37,21 @@ COLLECTION = os.environ.get("QDRANT_COLLECTION", "esmeralda")
 # --- Pomocná embedding funkcia ---
 def embed(text: str) -> List[float]:
     r = oi.embeddings.create(model="text-embedding-3-small", input=text)
+    # Record embedding token usage if available
+    try:
+        # Some SDK versions expose r.usage.prompt_tokens
+        prompt_tokens = 0
+        if hasattr(r, "usage") and getattr(r.usage, "prompt_tokens", None) is not None:
+            prompt_tokens = int(r.usage.prompt_tokens)
+        usage_counters["embedding_tokens"] += prompt_tokens
+    except Exception:
+        # Be permissive; usage may be missing in some responses
+        pass
+    # Prefer explicit model name we requested; fall back to response field if present
+    try:
+        usage_counters["embedding_model"] = getattr(r, "model", None) or "text-embedding-3-small"
+    except Exception:
+        usage_counters["embedding_model"] = "text-embedding-3-small"
     return r.data[0].embedding
 
 # --- Tool: vyhľadávanie v Qdrante s PRESNÝM filtrom (vrátane null polí) ---
@@ -90,9 +111,17 @@ def save_message(session_id: str, role: str, content: str) -> None:
         # Nezastavuj beh agenta kvôli logovaniu
         print(f"[Supabase] Insert error: {e}")
 
-def save_token_usage(session_id: str, model: str, input_tokens: int, output_tokens: int) -> None:
+def save_token_usage(
+    session_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    embedding_model: str | None = None,
+    embedding_input_tokens: int = 0,
+) -> None:
     """
-    Uloží token usage do public.tokenUsage v Supabase.
+    Uloží token usage do public.tokenUsage v Supabase vrátane embeddingov.
     """
     try:
         sb.table("tokenUsage").insert({
@@ -100,6 +129,8 @@ def save_token_usage(session_id: str, model: str, input_tokens: int, output_toke
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "embedding_model": embedding_model,
+            "embedding_input_tokens": int(embedding_input_tokens or 0),
         }).execute()
     except Exception as e:
         print(f"[Supabase] Token usage insert error: {e}")
@@ -128,7 +159,7 @@ esmeralda = Agent(
     name="Esmeralda",
     model="gpt-5-mini",
     instructions=(
-        "Si právna asistentka pre SR. Použi nástroj search_law, ak je to relevantné, inak odpovedz priamo."
+        "Si právna asistentka pre SR. Použi nástroj search_law, ak je to potrebné, inak odpovedz priamo."
         "Ak nástroj nič použiteľné nevráti, povedz: Nenašiel som relevantné informácie."
         "Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nepoužívaj odrážky ani číslovanie."
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
@@ -141,6 +172,9 @@ esmeralda = Agent(
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
 async def run_once(session_id: str, name: str, prompt: str):
     print(f"[Session: {session_id}] [User: {name}] -> {prompt}")
+    # Reset per-run embedding usage counters
+    usage_counters["embedding_tokens"] = 0
+    usage_counters["embedding_model"] = "text-embedding-3-small"
     save_message(session_id, "user", prompt)
     # Načítaj posledných 5 správ ako pamäť konverzácie
     mem_rows = fetch_memory(session_id, limit=10)
@@ -193,7 +227,14 @@ async def run_once(session_id: str, name: str, prompt: str):
         try:
             input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
             output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-            save_token_usage(session_id, esmeralda.model, input_tokens, output_tokens)
+            save_token_usage(
+                session_id,
+                esmeralda.model,
+                input_tokens,
+                output_tokens,
+                embedding_model=usage_counters.get("embedding_model"),
+                embedding_input_tokens=usage_counters.get("embedding_tokens", 0),
+            )
         except Exception as e:
             print(f"[Token Usage] Could not save token usage: {e}")
     else:
