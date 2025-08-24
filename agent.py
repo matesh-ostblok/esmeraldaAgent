@@ -223,22 +223,30 @@ async def run_once(session_id: str, name: str, prompt: str):
         except Exception as e:
             print(f"[Token Usage] Final response parse error: {e}")
 
+    # Uloženie usage (LLM + embeddingy). Aj keď LLM usage chýba, zaúčtujeme aspoň embeddingy.
+    in_tok = 0
+    out_tok = 0
     if usage:
         try:
-            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-            save_token_usage(
-                session_id,
-                esmeralda.model,
-                input_tokens,
-                output_tokens,
-                embedding_model=usage_counters.get("embedding_model"),
-                embedding_input_tokens=usage_counters.get("embedding_tokens", 0),
-            )
+            # Podpora dvoch konvencií názvov: input/output_tokens a prompt/completion_tokens
+            in_tok = int(getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0)) or 0)
+            out_tok = int(getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0)
         except Exception as e:
-            print(f"[Token Usage] Could not save token usage: {e}")
+            print(f"[Token Usage] Could not parse usage fields: {e}")
     else:
-        print("[Token Usage] Usage not available at all.")
+        print("[Token Usage] Usage not available; will record embedding usage only if present.")
+    try:
+        # Vždy zapíš; ak LLM usage nie je, ostanú 0/0 a uloží sa aspoň embedder
+        save_token_usage(
+            session_id,
+            esmeralda.model,
+            in_tok,
+            out_tok,
+            embedding_model=usage_counters.get("embedding_model"),
+            embedding_input_tokens=int(usage_counters.get("embedding_tokens", 0) or 0),
+        )
+    except Exception as e:
+        print(f"[Supabase] Token usage insert error: {e}")
 
 if __name__ == "__main__":
     import sys
