@@ -15,7 +15,7 @@ python agent.py <session_id> <name> "<otázka>"
 
 Príklad:
 ```bash
-python agent.py test-session Matej "Ako dlho môžem byť vo väzení za vraždu?"
+python agent.py "748h7d6c-54g3-4cfc-98fs-ed808d55cd70" "Jozef" "Ako dlho môžem byť vo väzení za vraždu?"
 ```
 
 Tento spôsob spustí funkciu `run_once`, ktorá:
