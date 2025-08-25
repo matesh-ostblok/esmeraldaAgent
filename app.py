@@ -1,5 +1,7 @@
 # app.py
 import asyncio
+import re
+import json
 from contextlib import redirect_stdout
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -8,6 +10,16 @@ import uvicorn
 from agent import run_once, esmeralda
 
 app = FastAPI()
+
+def _tokenize_small(s: str, size: int = 3):
+    """Yield small token-like chunks of size `size` codepoints from string `s`.
+    Preserves order; does not drop characters. Simple and UTF-8 safe.
+    """
+    i = 0
+    n = len(s)
+    while i < n:
+        yield s[i:i+size]
+        i += size
 
 class _QueueWriter:
     """File-like writer that pushes writes into an asyncio.Queue."""
@@ -29,6 +41,8 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     All token accounting (LLM + embeddings) is done inside agent.run_once.
     """
     q: asyncio.Queue[str] = asyncio.Queue()
+
+    first_print_skipped = False  # drop the first session/user log line
 
     async def _runner():
         writer = _QueueWriter(q)
@@ -53,15 +67,27 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
 
             if chunk == "__RUN_DONE__":
                 if buffer:
-                    yield f"data: {{\"delta\": {buffer!r}}}\n\n".encode("utf-8")
+                    # If the last buffered text is the session/user line, drop it.
+                    if not first_print_skipped and re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", buffer):
+                        first_print_skipped = True
+                    else:
+                        for tok in _tokenize_small(buffer):
+                            yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
                     buffer = ""
                 break
 
             buffer += chunk
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                if line:
-                    yield f"data: {{\"delta\": {line!r}}}\n\n".encode("utf-8")
+                if not line:
+                    continue
+                # Drop the first log line that looks like: [Session: ...] [User: ...] -> ...
+                if not first_print_skipped and re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", line):
+                    first_print_skipped = True
+                    continue
+                # Emit in small token-like chunks (3 codepoints)
+                for tok in _tokenize_small(line):
+                    yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
 
     finally:
         try:
