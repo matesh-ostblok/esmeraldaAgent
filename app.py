@@ -55,6 +55,10 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     # Tell clients we're ready
     yield b'data: {"ready": true}\n\n'
 
+    # Emit the user prompt once at the beginning
+    if prompt:
+        yield ("data: " + json.dumps({"delta": prompt}, ensure_ascii=False) + "\n\n").encode("utf-8")
+
     buffer = ""
     try:
         while True:
