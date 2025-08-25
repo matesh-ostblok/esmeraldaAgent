@@ -1,12 +1,75 @@
 # app.py
 import asyncio
+from contextlib import redirect_stdout
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
 from agent import run_once, esmeralda
 
 app = FastAPI()
+
+class _QueueWriter:
+    """File-like writer that pushes writes into an asyncio.Queue."""
+    def __init__(self, q: asyncio.Queue[str]):
+        self.q = q
+    def write(self, s: str) -> int:
+        if s:
+            try:
+                self.q.put_nowait(s)
+            except Exception:
+                pass
+        return len(s)
+    def flush(self) -> None:
+        return None
+
+async def sse_chat_stream(session_id: str, name: str, prompt: str):
+    """
+    Run agent.run_once(session_id, name, prompt) and stream its stdout as SSE.
+    All token accounting (LLM + embeddings) is done inside agent.run_once.
+    """
+    q: asyncio.Queue[str] = asyncio.Queue()
+
+    async def _runner():
+        writer = _QueueWriter(q)
+        with redirect_stdout(writer):
+            await run_once(session_id, name, prompt)
+        await q.put("__RUN_DONE__")
+
+    task = asyncio.create_task(_runner())
+
+    # Tell clients we're ready
+    yield b'data: {"ready": true}\n\n'
+
+    buffer = ""
+    try:
+        while True:
+            try:
+                chunk = await asyncio.wait_for(q.get(), timeout=20)
+            except asyncio.TimeoutError:
+                # keep-alive comment for proxies during idle
+                yield b": keepalive\n\n"
+                continue
+
+            if chunk == "__RUN_DONE__":
+                if buffer:
+                    yield f"data: {{\"delta\": {buffer!r}}}\n\n".encode("utf-8")
+                    buffer = ""
+                break
+
+            buffer += chunk
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                if line:
+                    yield f"data: {{\"delta\": {line!r}}}\n\n".encode("utf-8")
+
+    finally:
+        try:
+            await asyncio.wait_for(task, timeout=5)
+        except Exception:
+            task.cancel()
+
+    yield b'data: {"done": true}\n\n'
 
 @app.post("/chat")
 async def chat(request: Request):
