@@ -1,0 +1,43 @@
+# link this template to template folder
+
+server {
+    listen 80;
+    server_name chat.srv883937.hstgr.cloud;
+
+    # --- CORS povolené originy (prispôsob podľa potreby) ---
+    # Povoliť tvoju hostinger stránku + vlastnú doménu.
+    # set $cors_origin "";
+    # if ($http_origin ~* ^https?://(darkturquoise-newt-317971\.hostingersite\.com|backend\.srv883937\.hstgr\.cloud)$) {
+    # set $cors_origin $http_origin;
+
+    # SSE endpoint: /chat
+    location = /chat {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # Dôležité pre SSE
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        proxy_buffering off;
+        gzip off;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # CORS povolený pre všetko
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        add_header Access-Control-Allow-Headers "Content-Type, Authorization, Accept" always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+        add_header Vary "Origin" always;
+
+        # OPTIONS preflight
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+    }
+
+    client_max_body_size 10m;
+}
