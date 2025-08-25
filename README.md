@@ -1,21 +1,68 @@
 # esmeraldaAgent
+**Esmeralda** je AI právna asistentka pre Slovlex.  
+Používa model `gpt-5-mini`, ktorý dopĺňa o vyhľadávanie v databáze zákonov uložených v Qdrante.  
+Správy a spotrebu tokenov zapisuje do Supabase.
+## Ako funguje
+- Otázky používateľa spracováva `agent.py` pomocou OpenAI Agents SDK.
+- Kontext (relevantné paragrafy zákonov) získava z Qdrant kolekcie.
+- Každý embedding sa účtuje a spolu s LLM tokenmi sa zapisuje do tabuľky `tokenUsage` v Supabase.
+- Samotné správy konverzácie ukladá do tabuľky `chatMessages`.
+## Spustenie cez Python (jednorazovo)
 
-Python agent for Slovak law consultations. The agent uses OpenAI `gpt-5-mini` with medium reasoning effort and high verbosity. It retrieves context from a Qdrant collection and stores chat messages and token usage in Supabase.
-
-## Environment variables
-
-The following variables must be defined (for example via a `.env` file):
-
-- `OPENAI_API_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_KEY`
-- `QDRANT_URL`
-- `QDRANT_COLLECTION`
-
-## Usage
-
-```
-python agent.py <session_id> <name> "<question>"
+```bash
+python agent.py <session_id> <name> "<otázka>"
 ```
 
-Requirements are listed in `requirements.txt`.
+Príklad:
+```bash
+python agent.py test-session Matej "Ako dlho môžem byť vo väzení za vraždu?"
+```
+
+Tento spôsob spustí funkciu `run_once`, ktorá:
+- uloží správu používateľa,
+- pridá kontext z pamäti,
+- spustí agenta so streamovaním odpovede,
+- zapíše správu asistenta a usage tokenov do DB.
+
+## Spustenie cez FastAPI (SSE)
+
+Beží server `app.py` (typicky za Nginxom a Gunicornom):
+
+```bash
+gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app:app
+```
+
+### Volanie cez curl
+
+Na SSE endpoint `/chat` sa dá pripojiť napríklad takto:
+
+```bash
+curl -N --http1.1 -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "session_id": "test-session",
+    "name": "Matej",
+    "prompt": "Ako dlho môžem byť vo väzení za vraždu?"
+  }'
+```
+
+Výstup bude prichádzať postupne v SSE eventoch:
+
+```
+data: {"ready": true}
+
+data: {"delta": "Ako"}
+data: {"delta": " dlho"}
+data: {"delta": " môžem"}
+...
+data: {"done": true}
+```
+
+## Premenné prostredia
+
+Definuj si ich napr. v `.env`:
+
+## Requirements
+
+Sú v `requirements.txt`.
