@@ -5,8 +5,15 @@ Správy a spotrebu tokenov zapisuje do Supabase.
 ## Ako funguje
 - Otázky používateľa spracováva `agent.py` pomocou OpenAI Agents SDK.
 - Kontext (relevantné paragrafy zákonov) získava z Qdrant kolekcie.
+- Na vyhľadávanie používa nástroj `searchLaw` v súbore `tools/searchLaw.py`.
 - Každý embedding sa účtuje a spolu s LLM tokenmi sa zapisuje do tabuľky `tokenUsage` v Supabase.
 - Samotné správy konverzácie ukladá do tabuľky `chatMessages`.
+
+## Štruktúra projektu
+
+- `agent.py`: definícia agenta, stream behu, ukladanie správ a usage do Supabase.
+- `app.py`: FastAPI server so SSE endpointom `/chat`.
+- `tools/searchLaw.py`: nástroj `searchLaw` (Qdrant vyhľadávanie + embedding cez OpenAI).
 ## Spustenie cez Python (jednorazovo)
 
 ```bash
@@ -63,6 +70,24 @@ data: {"done": true}
 
 Definuj si ich napr. v `.env`:
 
-## Requirements
+```
+# OpenAI
+OPENAI_API_KEY=...
 
-Sú v `requirements.txt`.
+# Qdrant
+QDRANT_URL=http://localhost:6333
+# QDRANT_API_KEY=...           # (voliteľné, ak máš zapnutú autorizáciu)
+QDRANT_COLLECTION=esmeralda     # (voliteľné, default je "esmeralda")
+
+# Supabase
+SUPABASE_URL=https://...supabase.co
+SUPABASE_KEY=...
+```
+
+## Inštalácia závislostí
+
+```
+pip install -r requirements.txt
+```
+
+Poznámka: `.env` sa načítava v `agent.py` aj v `tools/searchLaw.py` (idempotentne), aby bolo možné použiť nástroj aj samostatne.

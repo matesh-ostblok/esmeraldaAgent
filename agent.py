@@ -7,90 +7,17 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
 
-from openai import OpenAI
-from agents import Agent, Runner, function_tool  # Agents SDK
-from qdrant_client import QdrantClient
+from agents import Agent, Runner  # Agents SDK
 from supabase import create_client, Client
 
-# --- Usage accumulators (per-run) ---
-usage_counters = {
-    "embedding_tokens": 0,
-    "embedding_model": "text-embedding-3-small",
-}
-
-# --- OpenAI & Qdrant klienti ---
-oi = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-# Qdrant nastavenia
-qdr = QdrantClient(
-    url=os.environ.get("QDRANT_URL"),
-#    api_key=os.environ.get("QDRANT_API_KEY") or None,
-)
+from tools.searchLaw import searchLaw, usage_counters
 
 # Supabase klient
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-COLLECTION = os.environ.get("QDRANT_COLLECTION", "esmeralda")
-
-# --- Pomocná embedding funkcia ---
-def embed(text: str) -> List[float]:
-    r = oi.embeddings.create(model="text-embedding-3-small", input=text)
-    # Record embedding token usage if available
-    try:
-        # Some SDK versions expose r.usage.prompt_tokens
-        prompt_tokens = 0
-        if hasattr(r, "usage") and getattr(r.usage, "prompt_tokens", None) is not None:
-            prompt_tokens = int(r.usage.prompt_tokens)
-        usage_counters["embedding_tokens"] += prompt_tokens
-    except Exception:
-        # Be permissive; usage may be missing in some responses
-        pass
-    # Prefer explicit model name we requested; fall back to response field if present
-    try:
-        usage_counters["embedding_model"] = getattr(r, "model", None) or "text-embedding-3-small"
-    except Exception:
-        usage_counters["embedding_model"] = "text-embedding-3-small"
-    return r.data[0].embedding
-
-# --- Tool: vyhľadávanie v Qdrante s PRESNÝM filtrom (vrátane null polí) ---
-@function_tool
-def search_law(query: str) -> List[Dict[str, Any]]:
-    """
-    Vyhľadá relevantné právne dokumenty v Qdrant kolekcii 'esmeralda' podľa textového dopytu.
-    Návratová hodnota: pole {id, score, payload}.
-    """
-    vector = embed(query)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Filter presne podľa tvojej špecifikácie (vrátane null hodnôt)
-    q_filter = {
-        "should": [
-            {"is_null": {"key": "metadata.validTo"}},
-            {"key": "metadata.validTo", "range": {"gt": None, "gte": today, "lt": None, "lte": None}},
-        ]
-    }
-
-    # qdrant-client: search(collection_name=..., query_vector=..., ...)
-    res = qdr.query_points(
-        collection_name=COLLECTION,
-        query=vector,
-        limit=5,
-        with_payload=True,
-        with_vectors=False,
-#        query_filter=q_filter,
-        timeout=120,
-    )
-    results = [
-        {"id": p.id, "score": p.score, "payload": p.payload}
-        for p in res.points
-    ]
-    # Concise debug log of hit count (avoid noisy per-point prints)
-    try:
-        print(f"[search_law] hits={len(results)}")
-    except Exception:
-        pass
-    return results
+## tools.searchLaw provides searchLaw tool and per-run embedding usage tracking
 
 def save_message(session_id: str, role: str, content: str) -> None:
     """
@@ -155,13 +82,13 @@ esmeralda = Agent(
     name="Esmeralda",
     model="gpt-5-mini",
     instructions=(
-        "Si právna asistentka pre SR. Na vyhľdávanie v právnych textoch môžeš použiť nástroj search_law."
+        "Si právna asistentka pre SR. Na vyhľdávanie v právnych textoch môžeš použiť nástroj searchLaw."
         "Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nepoužívaj odrážky ani číslovanie."
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
-        "Otázku používateľa rozlož semanticky na menšie frázy (2–7 slov), ktoré jednotlivo posielaj do search_law."
+        "Otázku používateľa rozlož semanticky na menšie frázy (2–7 slov), ktoré jednotlivo posielaj do searchLaw."
     ).format(name="{name}"),
 
-    tools=[search_law],
+    tools=[searchLaw],
 )
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
