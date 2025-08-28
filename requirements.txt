@@ -2,8 +2,6 @@ openai
 qdrant-client
 supabase
 python-dotenv
-typing
-datetime
 openai-agents
 fastapi
 uvicorn

@@ -3,13 +3,12 @@ import os
 import asyncio
 from datetime import datetime, timezone
 from typing import List, Dict, Any
-from weakref import ref
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from openai import OpenAI
-from agents import Agent, Runner, function_tool, set_default_openai_key  # Agents SDK
+from agents import Agent, Runner, function_tool  # Agents SDK
 from qdrant_client import QdrantClient
 from supabase import create_client, Client
 
@@ -72,14 +71,6 @@ def search_law(query: str) -> List[Dict[str, Any]]:
         ]
     }
 
-    body = dict(
-        vector=vector,
-        limit=10,
-        with_payload=True,
-        with_vectors=False,
-        query_filter=q_filter,  # qdrant-client akceptuje aj dict (prejde ako raw JSON)
-    )
-
     # qdrant-client: search(collection_name=..., query_vector=..., ...)
     res = qdr.query_points(
         collection_name=COLLECTION,
@@ -90,11 +81,16 @@ def search_law(query: str) -> List[Dict[str, Any]]:
 #        query_filter=q_filter,
         timeout=120,
     )
-    return [
+    results = [
         {"id": p.id, "score": p.score, "payload": p.payload}
         for p in res.points
     ]
-    print(">>> ID:", p.id, "SCORE:", p.score, "PAYLOAD:", p.payload)
+    # Concise debug log of hit count (avoid noisy per-point prints)
+    try:
+        print(f"[search_law] hits={len(results)}")
+    except Exception:
+        pass
+    return results
 
 def save_message(session_id: str, role: str, content: str) -> None:
     """
@@ -159,10 +155,10 @@ esmeralda = Agent(
     name="Esmeralda",
     model="gpt-5-mini",
     instructions=(
-        "Si právna asistentka pre SR. Na vyhľdávanie v právnych textoch môžeš použiť nástroj searchLaw."
+        "Si právna asistentka pre SR. Na vyhľdávanie v právnych textoch môžeš použiť nástroj search_law."
         "Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nepoužívaj odrážky ani číslovanie."
         "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
-        "Otázku používateľa rozlož semanticky na menšie frázy (2–7 slov), ktoré jednotlivo posielaj do searchLaw."
+        "Otázku používateľa rozlož semanticky na menšie frázy (2–7 slov), ktoré jednotlivo posielaj do search_law."
     ).format(name="{name}"),
 
     tools=[search_law],

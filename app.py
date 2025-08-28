@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
-from agent import run_once, esmeralda
+from agent import run_once
 
 app = FastAPI()
 
@@ -42,7 +42,9 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     """
     q: asyncio.Queue[str] = asyncio.Queue()
 
-    first_print_skipped = False  # drop the first session/user log line
+    # We drop the very first session/user log line printed by run_once.
+    header_done = False
+    header_buffer = ""
 
     async def _runner():
         writer = _QueueWriter(q)
@@ -59,7 +61,6 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     if prompt:
         yield ("data: " + json.dumps({"delta": prompt}, ensure_ascii=False) + "\n\n").encode("utf-8")
 
-    buffer = ""
     try:
         while True:
             try:
@@ -70,27 +71,39 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
                 continue
 
             if chunk == "__RUN_DONE__":
-                if buffer:
-                    # If the last buffered text is the session/user line, drop it.
-                    if not first_print_skipped and re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", buffer):
-                        first_print_skipped = True
+                # Flush any remaining header buffer on completion
+                if not header_done and header_buffer:
+                    # If the buffered text is the session/user line, drop it.
+                    if re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", header_buffer):
+                        header_done = True
                     else:
-                        for tok in _tokenize_small(buffer):
+                        header_done = True
+                        for tok in _tokenize_small(header_buffer):
                             yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
-                    buffer = ""
                 break
 
-            buffer += chunk
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                if not line:
-                    continue
-                # Drop the first log line that looks like: [Session: ...] [User: ...] -> ...
-                if not first_print_skipped and re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", line):
-                    first_print_skipped = True
-                    continue
-                # Emit in small token-like chunks (3 codepoints)
-                for tok in _tokenize_small(line):
+            if not header_done:
+                header_buffer += chunk
+                if "\n" in header_buffer:
+                    first_line, rest = header_buffer.split("\n", 1)
+                    if re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", first_line):
+                        header_done = True
+                        # Emit the remainder immediately in small token-like chunks
+                        if rest:
+                            for tok in _tokenize_small(rest):
+                                yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
+                        header_buffer = ""
+                    else:
+                        # Not a header line; emit it and continue with rest
+                        header_done = True
+                        for tok in _tokenize_small(first_line + ("\n" + rest if rest else "")):
+                            yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
+                        header_buffer = ""
+                continue
+
+            # Header already handled: emit chunk immediately in small token-like chunks
+            if chunk:
+                for tok in _tokenize_small(chunk):
                     yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
 
     finally:
