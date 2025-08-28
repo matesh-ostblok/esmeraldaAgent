@@ -125,17 +125,28 @@ async def chat(request: Request):
         "prompt": "Otázka používateľa"
     }
     """
+    # Parse body as JSON; if that fails, try form-encoded
+    data = None
     try:
         data = await request.json()
     except Exception:
-        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        try:
+            form = await request.form()
+            data = dict(form)
+        except Exception:
+            return JSONResponse({"error": "Invalid request body (expected JSON or form)"}, status_code=400)
 
-    session_id = data.get("session_id")
-    name = data.get("name", "User")
-    prompt = data.get("prompt")
+    # Support both "prompt" and legacy "message"
+    session_id = (data.get("session_id") if isinstance(data, dict) else None) or (
+        data.get("sessionId") if isinstance(data, dict) else None
+    )
+    name = (data.get("name") if isinstance(data, dict) else None) or "User"
+    prompt = (data.get("prompt") if isinstance(data, dict) else None) or (
+        data.get("message") if isinstance(data, dict) else None
+    )
 
     if not session_id or not prompt:
-        return JSONResponse({"error": "session_id a prompt sú povinné"}, status_code=400)
+        return JSONResponse({"error": "Missing required fields: session_id and prompt/message"}, status_code=400)
 
     return StreamingResponse(
         sse_chat_stream(session_id, name, prompt),

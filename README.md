@@ -41,7 +41,7 @@ gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app:app
 
 ### Volanie cez curl
 
-Na SSE endpoint `/chat` sa dá pripojiť napríklad takto:
+Na SSE endpoint `/chat` sa dá pripojiť napríklad takto (akceptuje kľúč `prompt` aj alias `message`):
 
 ```bash
 curl -N --http1.1 -X POST http://localhost:8000/chat \
