@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timezone
+import sys
 from typing import List, Dict, Any
 
 from dotenv import load_dotenv
@@ -73,7 +74,8 @@ def searchLaw(query: str) -> List[Dict[str, Any]]:
         for p in res.points
     ]
     try:
-        print(f"[searchLaw] hits={len(results)}")
+        # Log to stderr so SSE (which captures stdout) does not include tool logs
+        print(f"[searchLaw] hits={len(results)}", file=sys.stderr)
     except Exception:
         pass
     return results

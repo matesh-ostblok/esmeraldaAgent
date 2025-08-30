@@ -42,8 +42,8 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     """
     q: asyncio.Queue[str] = asyncio.Queue()
 
-    # We drop the very first session/user log line printed by run_once.
-    header_done = False
+    # We no longer expect a header on stdout; stream directly
+    header_done = True
     header_buffer = ""
 
     async def _runner():
@@ -57,9 +57,7 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     # Tell clients we're ready
     yield b'data: {"ready": true}\n\n'
 
-    # Emit the user prompt once at the beginning
-    if prompt:
-        yield ("data: " + json.dumps({"delta": prompt}, ensure_ascii=False) + "\n\n").encode("utf-8")
+    # Do not echo the user prompt; stream only assistant output
 
     try:
         while True:
@@ -81,25 +79,6 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
                         for tok in _tokenize_small(header_buffer):
                             yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
                 break
-
-            if not header_done:
-                header_buffer += chunk
-                if "\n" in header_buffer:
-                    first_line, rest = header_buffer.split("\n", 1)
-                    if re.match(r"^\s*\[Session:.*\]\s*\[User:.*\]\s*->", first_line):
-                        header_done = True
-                        # Emit the remainder immediately in small token-like chunks
-                        if rest:
-                            for tok in _tokenize_small(rest):
-                                yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
-                        header_buffer = ""
-                    else:
-                        # Not a header line; emit it and continue with rest
-                        header_done = True
-                        for tok in _tokenize_small(first_line + ("\n" + rest if rest else "")):
-                            yield ("data: " + json.dumps({"delta": tok}, ensure_ascii=False) + "\n\n").encode("utf-8")
-                        header_buffer = ""
-                continue
 
             # Header already handled: emit chunk immediately in small token-like chunks
             if chunk:

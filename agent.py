@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from dotenv import load_dotenv
+import sys
 load_dotenv()
 
 from agents import Agent, Runner  # Agents SDK
@@ -31,8 +32,8 @@ def save_message(session_id: str, role: str, content: str) -> None:
             "content": content
         }).execute()
     except Exception as e:
-        # Nezastavuj beh agenta kvôli logovaniu
-        print(f"[Supabase] Insert error: {e}")
+        # Nezastavuj beh agenta kvôli logovaniu (loguj na stderr)
+        print(f"[Supabase] Insert error: {e}", file=sys.stderr)
 
 def save_token_usage(
     session_id: str,
@@ -56,7 +57,7 @@ def save_token_usage(
             "embedding_input_tokens": int(embedding_input_tokens or 0),
         }).execute()
     except Exception as e:
-        print(f"[Supabase] Token usage insert error: {e}")
+        print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
 
 def fetch_memory(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
@@ -74,7 +75,7 @@ def fetch_memory(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         rows.reverse()
         return rows
     except Exception as e:
-        print(f"[Supabase] Fetch memory error: {e}")
+        print(f"[Supabase] Fetch memory error: {e}", file=sys.stderr)
         return []
 
 # --- Agent: používa len tool výstupy ---
@@ -93,7 +94,8 @@ esmeralda = Agent(
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
 async def run_once(session_id: str, name: str, prompt: str):
-    print(f"[Session: {session_id}] [User: {name}] -> {prompt}")
+    # Log session header to stderr so it isn't streamed
+    print(f"[Session: {session_id}] [User: {name}] -> {prompt}", file=sys.stderr)
     # Reset per-run embedding usage counters
     usage_counters["embedding_tokens"] = 0
     usage_counters["embedding_model"] = "text-embedding-3-small"
@@ -119,7 +121,7 @@ async def run_once(session_id: str, name: str, prompt: str):
             try:
                 usage = ev.data.response.output[0].usage
             except Exception as e:
-                print(f"[Token Usage] Parse error: {e}")
+                print(f"[Token Usage] Parse error: {e}", file=sys.stderr)
     print()  # newline
     assistant_text = "".join(buf)
     if assistant_text.strip():
@@ -132,7 +134,7 @@ async def run_once(session_id: str, name: str, prompt: str):
             if ctx and getattr(ctx, "usage", None):
                 usage = ctx.usage
         except Exception as e:
-            print(f"[Token Usage] Context usage parse error: {e}")
+            print(f"[Token Usage] Context usage parse error: {e}", file=sys.stderr)
 
     # Fallback – ak by context nemal usage, skús finálnu odpoveď
     if not usage:
@@ -143,7 +145,7 @@ async def run_once(session_id: str, name: str, prompt: str):
                 if hasattr(out0, "usage") and out0.usage:
                     usage = out0.usage
         except Exception as e:
-            print(f"[Token Usage] Final response parse error: {e}")
+            print(f"[Token Usage] Final response parse error: {e}", file=sys.stderr)
 
     # Uloženie usage (LLM + embeddingy). Aj keď LLM usage chýba, zaúčtujeme aspoň embeddingy.
     in_tok = 0
@@ -154,9 +156,9 @@ async def run_once(session_id: str, name: str, prompt: str):
             in_tok = int(getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0)) or 0)
             out_tok = int(getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0)
         except Exception as e:
-            print(f"[Token Usage] Could not parse usage fields: {e}")
+            print(f"[Token Usage] Could not parse usage fields: {e}", file=sys.stderr)
     else:
-        print("[Token Usage] Usage not available; will record embedding usage only if present.")
+        print("[Token Usage] Usage not available; will record embedding usage only if present.", file=sys.stderr)
     try:
         # Vždy zapíš; ak LLM usage nie je, ostanú 0/0 a uloží sa aspoň embedder
         save_token_usage(
@@ -168,7 +170,7 @@ async def run_once(session_id: str, name: str, prompt: str):
             embedding_input_tokens=int(usage_counters.get("embedding_tokens", 0) or 0),
         )
     except Exception as e:
-        print(f"[Supabase] Token usage insert error: {e}")
+        print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
     import sys
