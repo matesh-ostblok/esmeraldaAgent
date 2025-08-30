@@ -144,15 +144,15 @@ async def run_once(session_id: str, name: str, prompt: str):
             print(f"[Token Usage] Context usage parse error: {e}", file=sys.stderr)
 
     # Fallback – ak by context nemal usage, skús finálnu odpoveď
-    if not usage:
-        try:
-            final = await result.get_final_response()
-            if final and getattr(final, "output", None):
-                out0 = final.output[0]
-                if hasattr(out0, "usage") and out0.usage:
-                    usage = out0.usage
-        except Exception as e:
-            print(f"[Token Usage] Final response parse error: {e}", file=sys.stderr)
+    # if not usage:
+    #     try:
+    #         final = await result.get_final_response()
+    #         if final and getattr(final, "output", None):
+    #             out0 = final.output[0]
+    #             if hasattr(out0, "usage") and out0.usage:
+    #                 usage = out0.usage
+    #     except Exception as e:
+    #         print(f"[Token Usage] Final response parse error: {e}", file=sys.stderr)
 
     # Uloženie usage (LLM + embeddingy). Aj keď LLM usage chýba, zaúčtujeme aspoň embeddingy.
     in_tok = 0
