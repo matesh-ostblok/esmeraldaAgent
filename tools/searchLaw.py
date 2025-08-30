@@ -66,7 +66,7 @@ def searchLaw(query: str) -> List[Dict[str, Any]]:
         limit=5,
         with_payload=True,
         with_vectors=False,
-        # query_filter=q_filter,
+        query_filter=q_filter,
         timeout=120,
     )
     results = [
