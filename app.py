@@ -35,9 +35,9 @@ class _QueueWriter:
     def flush(self) -> None:
         return None
 
-async def sse_chat_stream(session_id: str, name: str, prompt: str):
+async def sse_chat_stream(uid: str, name: str, prompt: str):
     """
-    Run agent.run_once(session_id, name, prompt) and stream its stdout as SSE.
+    Run agent.run_once(uid, name, prompt) and stream its stdout as SSE.
     All token accounting (LLM + embeddings) is done inside agent.run_once.
     """
     q: asyncio.Queue[str] = asyncio.Queue()
@@ -49,7 +49,7 @@ async def sse_chat_stream(session_id: str, name: str, prompt: str):
     async def _runner():
         writer = _QueueWriter(q)
         with redirect_stdout(writer):
-            await run_once(session_id, name, prompt)
+            await run_once(uid, name, prompt)
         await q.put("__RUN_DONE__")
 
     task = asyncio.create_task(_runner())
@@ -99,7 +99,7 @@ async def chat(request: Request):
     SSE endpoint, ktorý vykoná to isté čo agent.run_once, ale ako HTTP stream.
     Telo:
     {
-        "session_id": "uuid",
+        "uid": "uuid",
         "name": "Matej",
         "prompt": "Otázka používateľa"
     }
@@ -116,19 +116,17 @@ async def chat(request: Request):
             return JSONResponse({"error": "Invalid request body (expected JSON or form)"}, status_code=400)
 
     # Support both "prompt" and legacy "message"
-    session_id = (data.get("session_id") if isinstance(data, dict) else None) or (
-        data.get("sessionId") if isinstance(data, dict) else None
-    )
+    uid = (data.get("uid") if isinstance(data, dict) else None)
     name = (data.get("name") if isinstance(data, dict) else None) or "User"
     prompt = (data.get("prompt") if isinstance(data, dict) else None) or (
         data.get("message") if isinstance(data, dict) else None
     )
 
-    if not session_id or not prompt:
-        return JSONResponse({"error": "Missing required fields: session_id and prompt/message"}, status_code=400)
+    if not uid or not prompt:
+        return JSONResponse({"error": "Missing required fields: uid and prompt/message"}, status_code=400)
 
     return StreamingResponse(
-        sse_chat_stream(session_id, name, prompt),
+        sse_chat_stream(uid, name, prompt),
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-cache"},
     )

@@ -17,7 +17,7 @@ Správy a spotrebu tokenov zapisuje do Supabase.
 ## Spustenie cez Python (jednorazovo)
 
 ```bash
-python agent.py <session_id> <name> "<otázka>"
+python agent.py <uid> <name> "<otázka>"
 ```
 
 Príklad:
@@ -48,7 +48,7 @@ curl -N --http1.1 -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -d '{
-    "session_id": "test-session",
+    "uid": "test-session",
     "name": "Matej",
     "prompt": "Ako dlho môžem byť vo väzení za vraždu?"
   }'

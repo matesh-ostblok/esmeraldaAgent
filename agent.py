@@ -20,14 +20,14 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ## tools.searchLaw provides searchLaw tool and per-run embedding usage tracking
 
-def save_message(session_id: str, role: str, content: str) -> None:
+def save_message(uid: str, role: str, content: str) -> None:
     """
     Uloží správu do public.chatMessages v Supabase.
     Očakáva role ∈ {"user","assistant"}.
     """
     try:
         sb.table("chatMessages").insert({
-            "session_id": session_id,
+            "uid": uid,
             "role": role,
             "content": content
         }).execute()
@@ -36,7 +36,7 @@ def save_message(session_id: str, role: str, content: str) -> None:
         print(f"[Supabase] Insert error: {e}", file=sys.stderr)
 
 def save_token_usage(
-    session_id: str,
+    uid: str,
     model: str,
     input_tokens: int,
     output_tokens: int,
@@ -49,7 +49,7 @@ def save_token_usage(
     """
     try:
         sb.table("tokenUsage").insert({
-            "session_id": session_id,
+            "uid": uid,
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -59,14 +59,14 @@ def save_token_usage(
     except Exception as e:
         print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
 
-def fetch_memory(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+def fetch_memory(uid: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     Načíta posledných `limit` správ zo session a vráti ich v chronologickom poradí (najstaršia -> najnovšia).
     """
     try:
         resp = sb.table("chatMessages")\
             .select("role,content,created_at")\
-            .eq("session_id", session_id)\
+            .eq("uid", uid)\
             .order("created_at", desc=True)\
             .limit(limit)\
             .execute()
@@ -100,15 +100,15 @@ esmeralda = Agent(
 )
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
-async def run_once(session_id: str, name: str, prompt: str):
+async def run_once(uid: str, name: str, prompt: str):
     # Log session header to stderr so it isn't streamed
-    print(f"[Session: {session_id}] [User: {name}] -> {prompt}", file=sys.stderr)
+    print(f"[UID: {uid}] [User: {name}] -> {prompt}", file=sys.stderr)
     # Reset per-run embedding usage counters
     usage_counters["embedding_tokens"] = 0
     usage_counters["embedding_model"] = "text-embedding-3-small"
-    save_message(session_id, "user", prompt)
+    save_message(uid, "user", prompt)
     # Načítaj posledných 5 správ ako pamäť konverzácie
-    mem_rows = fetch_memory(session_id, limit=10)
+    mem_rows = fetch_memory(uid, limit=10)
     if mem_rows:
         memory_block = "\n".join([f"{r['role']}: {r['content']}" for r in mem_rows])
         enriched_input = f"[MEMORY]\n{memory_block}\n[/MEMORY]\n\n[USER QUESTION]\n{prompt}"
@@ -132,7 +132,7 @@ async def run_once(session_id: str, name: str, prompt: str):
     print()  # newline
     assistant_text = "".join(buf)
     if assistant_text.strip():
-        save_message(session_id, "assistant", assistant_text)
+        save_message(uid, "assistant", assistant_text)
 
     # Najprv skús usage z run contextu (Agents SDK ukladá usage tam po dokončení streamu)
     if not usage:
@@ -169,7 +169,7 @@ async def run_once(session_id: str, name: str, prompt: str):
     try:
         # Vždy zapíš; ak LLM usage nie je, ostanú 0/0 a uloží sa aspoň embedder
         save_token_usage(
-            session_id,
+            uid,
             esmeralda.model,
             in_tok,
             out_tok,
@@ -182,10 +182,10 @@ async def run_once(session_id: str, name: str, prompt: str):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 4:
-        session_id = sys.argv[1]
+        uid = sys.argv[1]
         name = sys.argv[2]
         prompt = " ".join(sys.argv[3:])
         esmeralda.instructions = esmeralda.instructions.format(name=name)
-        asyncio.run(run_once(session_id, name, prompt))
+        asyncio.run(run_once(uid, name, prompt))
     else:
-        print("Použitie: python agent.py <session_id> <name> <prompt>")
+        print("Použitie: python agent.py <uid> <name> <prompt>")
