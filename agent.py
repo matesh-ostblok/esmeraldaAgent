@@ -9,6 +9,7 @@ import sys
 load_dotenv()
 
 from agents import Agent, Runner  # Agents SDK
+from pathlib import Path
 from supabase import create_client, Client
 
 from tools.searchLaw import searchLaw, usage_counters
@@ -71,24 +72,14 @@ def _extract_topic(text: str, max_words: int = 5) -> str:
 
 ## Memory is now passed in from the website (already trimmed/ordered).
 
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+SYSTEM_PROMPT_TEMPLATE = (PROMPTS_DIR / "esmeralda_system_v2.md").read_text(encoding="utf-8").strip()
+
 # --- Agent: používa len tool výstupy ---
 esmeralda = Agent(
     name="Esmeralda",
     model="gpt-5-mini",
-    instructions=(
-        "Si právna asistentka pre SR. Na vyhľdávanie v právnych textoch môžeš použiť nástroj searchLaw."
-        "Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nepoužívaj odrážky ani číslovanie."
-        "Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation."
-        "Otázku používateľa rozlož semanticky na menšie frázy (2–7 slov), ktoré jednotlivo posielaj do searchLaw."
-        "Pri práci s výsledkami nástroja searchLaw vyberaj a zoradzuj dokumenty podľa týchto pravidiel:"
-        "- Primárne zoradenie: metadata.validFrom zostupne (najnovší ako prvý)."
-        "- Sekundárne zoradenie: score zostupne."
-        "- Ak metadata.validFrom chýba, použi náhradu v poradí: metadata.announcedOn, potom metadata.approvedOn; ak všetko chýba, rozhoduj iba podľa score."
-        "- Ak príde viac fragmentov z toho istého predpisu, uprednostni ten s najnovším metadata.validFrom."
-        "- Ak existuje novšia verzia predpisu s porovnateľným score, uprednostni novšiu pred staršou."
-        "- Pri citácii vždy uveď metadata.regulation vytlačené <b>bold<b/> (html tag, príklad zákoon č. <b>378/2021 Z. z.</b>)."
-    ).format(name="{name}"),
-
+    instructions=SYSTEM_PROMPT_TEMPLATE,
     tools=[searchLaw],
 )
 
@@ -106,6 +97,8 @@ async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]
         enriched_input = f"[MEMORY]\n{memory_block}\n[/MEMORY]\n\n[USER QUESTION]\n{prompt}"
     else:
         enriched_input = prompt
+    # Apply per-request templating (supports optional {name} in prompt template)
+    esmeralda.instructions = SYSTEM_PROMPT_TEMPLATE.format(name=name)
     result = Runner.run_streamed(esmeralda, input=enriched_input)
     buf = []
     usage = None
@@ -178,7 +171,6 @@ if __name__ == "__main__":
         uid = sys.argv[1]
         name = sys.argv[2]
         prompt = " ".join(sys.argv[3:])
-        esmeralda.instructions = esmeralda.instructions.format(name=name)
         asyncio.run(run_once(uid, name, prompt, memory=[]))
     else:
         print("Použitie: python agent.py <uid> <name> <prompt>")
