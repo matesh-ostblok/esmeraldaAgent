@@ -73,7 +73,7 @@ def _extract_topic(text: str, max_words: int = 5) -> str:
 ## Memory is now passed in from the website (already trimmed/ordered).
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-SYSTEM_PROMPT_TEMPLATE = (PROMPTS_DIR / "esmeralda_system_v2.md").read_text(encoding="utf-8").strip()
+SYSTEM_PROMPT_TEMPLATE = (PROMPTS_DIR / "esmeralda_system_actual.md").read_text(encoding="utf-8").strip()
 
 # --- Agent: používa len tool výstupy ---
 esmeralda = Agent(
