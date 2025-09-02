@@ -35,7 +35,7 @@ class _QueueWriter:
     def flush(self) -> None:
         return None
 
-async def sse_chat_stream(uid: str, name: str, prompt: str):
+async def sse_chat_stream(uid: str, name: str, prompt: str, history: list | None = None):
     """
     Run agent.run_once(uid, name, prompt) and stream its stdout as SSE.
     All token accounting (LLM + embeddings) is done inside agent.run_once.
@@ -49,7 +49,7 @@ async def sse_chat_stream(uid: str, name: str, prompt: str):
     async def _runner():
         writer = _QueueWriter(q)
         with redirect_stdout(writer):
-            await run_once(uid, name, prompt)
+            await run_once(uid, name, prompt, memory=history or [])
         await q.put("__RUN_DONE__")
 
     task = asyncio.create_task(_runner())
@@ -121,12 +121,13 @@ async def chat(request: Request):
     prompt = (data.get("prompt") if isinstance(data, dict) else None) or (
         data.get("message") if isinstance(data, dict) else None
     )
+    history = (data.get("history") if isinstance(data, dict) else None) or []
 
     if not uid or not prompt:
         return JSONResponse({"error": "Missing required fields: uid and prompt/message"}, status_code=400)
 
     return StreamingResponse(
-        sse_chat_stream(uid, name, prompt),
+        sse_chat_stream(uid, name, prompt, history),
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-cache"},
     )

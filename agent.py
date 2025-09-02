@@ -20,20 +20,7 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ## tools.searchLaw provides searchLaw tool and per-run embedding usage tracking
 
-def save_message(uid: str, role: str, content: str) -> None:
-    """
-    Uloží správu do public.chatMessages v Supabase.
-    Očakáva role ∈ {"user","assistant"}.
-    """
-    try:
-        sb.table("chatMessages").insert({
-            "uid": uid,
-            "role": role,
-            "content": content
-        }).execute()
-    except Exception as e:
-        # Nezastavuj beh agenta kvôli logovaniu (loguj na stderr)
-        print(f"[Supabase] Insert error: {e}", file=sys.stderr)
+## Website is now responsible for persisting chat messages.
 
 def save_token_usage(
     uid: str,
@@ -82,24 +69,7 @@ def _extract_topic(text: str, max_words: int = 5) -> str:
         return " ".join(orig[:max_words])
     return " ".join(kept[:max_words])
 
-def fetch_memory(uid: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """
-    Načíta posledných `limit` správ zo session a vráti ich v chronologickom poradí (najstaršia -> najnovšia).
-    """
-    try:
-        resp = sb.table("chatMessages")\
-            .select("role,content,created_at")\
-            .eq("uid", uid)\
-            .order("created_at", desc=True)\
-            .limit(limit)\
-            .execute()
-        rows = (getattr(resp, "data", None) or [])
-        # otoč na chronologické poradie
-        rows.reverse()
-        return rows
-    except Exception as e:
-        print(f"[Supabase] Fetch memory error: {e}", file=sys.stderr)
-        return []
+## Memory is now passed in from the website (already trimmed/ordered).
 
 # --- Agent: používa len tool výstupy ---
 esmeralda = Agent(
@@ -123,15 +93,14 @@ esmeralda = Agent(
 )
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
-async def run_once(uid: str, name: str, prompt: str):
+async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]] | None = None):
     # Log session header to stderr so it isn't streamed
     print(f"[UID: {uid}] [User: {name}] -> {prompt}", file=sys.stderr)
     # Reset per-run embedding usage counters
     usage_counters["embedding_tokens"] = 0
     usage_counters["embedding_model"] = "text-embedding-3-small"
-    save_message(uid, "user", prompt)
-    # Načítaj posledných 5 správ ako pamäť konverzácie
-    mem_rows = fetch_memory(uid, limit=10)
+    # Použi pamäť dodanú z webu (max ~10 položiek, chronologicky)
+    mem_rows = memory or []
     if mem_rows:
         memory_block = "\n".join([f"{r['role']}: {r['content']}" for r in mem_rows])
         enriched_input = f"[MEMORY]\n{memory_block}\n[/MEMORY]\n\n[USER QUESTION]\n{prompt}"
@@ -154,8 +123,7 @@ async def run_once(uid: str, name: str, prompt: str):
                 print(f"[Token Usage] Parse error: {e}", file=sys.stderr)
     print()  # newline
     assistant_text = "".join(buf)
-    if assistant_text.strip():
-        save_message(uid, "assistant", assistant_text)
+    # Persisting messages is handled by the website.
 
     # Najprv skús usage z run contextu (Agents SDK ukladá usage tam po dokončení streamu)
     if not usage:
@@ -211,6 +179,6 @@ if __name__ == "__main__":
         name = sys.argv[2]
         prompt = " ".join(sys.argv[3:])
         esmeralda.instructions = esmeralda.instructions.format(name=name)
-        asyncio.run(run_once(uid, name, prompt))
+        asyncio.run(run_once(uid, name, prompt, memory=[]))
     else:
         print("Použitie: python agent.py <uid> <name> <prompt>")
