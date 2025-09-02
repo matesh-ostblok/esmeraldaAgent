@@ -43,21 +43,44 @@ def save_token_usage(
     *,
     embedding_model: str | None = None,
     embedding_input_tokens: int = 0,
+    topic: str,
 ) -> None:
     """
     Uloží token usage do public.tokenUsage v Supabase vrátane embeddingov.
     """
+    payload = {
+        "uid": uid,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "embedding_model": embedding_model,
+        "embedding_input_tokens": int(embedding_input_tokens or 0),
+        "topic": topic or "",
+    }
     try:
-        sb.table("tokenUsage").insert({
-            "uid": uid,
-            "model": model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "embedding_model": embedding_model,
-            "embedding_input_tokens": int(embedding_input_tokens or 0),
-        }).execute()
+        sb.table("tokenUsage").insert(payload).execute()
     except Exception as e:
         print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
+
+def _extract_topic(text: str, max_words: int = 5) -> str:
+    """Unicode-safe 5-word topic summary derived from the user prompt.
+    Keeps word characters (unicode) and spaces, removes punctuation, drops simple stopwords, returns up to N tokens.
+    """
+    if not text:
+        return ""
+    import re as _re
+    cleaned = _re.sub(r"[\n\r\t]", " ", text.lower())
+    cleaned = _re.sub(r"[^\w\s]", " ", cleaned)
+    tokens = [t for t in cleaned.split() if t]
+    stop = {
+        # Slovak only
+        "a","aj","alebo","ale","sa","som","sme","ste","si","by","byť","ma","mi","mu","ti","to","je","sú","bol","bola","boli","bude","budú","na","v","vo","z","zo","do","od","pre","pod","nad","pri","o","u","k","ku","ako","že","ktorý","ktora","ktoré","ktorá","čo","kde","prečo","toto","táto","ten","tá","tí","tie","nej","svoj","svoje","svojho","svojeho",
+    }
+    kept = [t for t in tokens if t not in stop]
+    if not kept:
+        orig = [t for t in text.split() if t]
+        return " ".join(orig[:max_words])
+    return " ".join(kept[:max_words])
 
 def fetch_memory(uid: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
@@ -168,6 +191,7 @@ async def run_once(uid: str, name: str, prompt: str):
         print("[Token Usage] Usage not available; will record embedding usage only if present.", file=sys.stderr)
     try:
         # Vždy zapíš; ak LLM usage nie je, ostanú 0/0 a uloží sa aspoň embedder
+        topic = _extract_topic(prompt, max_words=5)
         save_token_usage(
             uid,
             esmeralda.model,
@@ -175,6 +199,7 @@ async def run_once(uid: str, name: str, prompt: str):
             out_tok,
             embedding_model=usage_counters.get("embedding_model"),
             embedding_input_tokens=int(usage_counters.get("embedding_tokens", 0) or 0),
+            topic=topic,
         )
     except Exception as e:
         print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)

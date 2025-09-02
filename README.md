@@ -7,6 +7,7 @@ Správy a spotrebu tokenov zapisuje do Supabase.
 - Kontext (relevantné paragrafy zákonov) získava z Qdrant kolekcie.
 - Na vyhľadávanie používa nástroj `searchLaw` v súbore `tools/searchLaw.py`.
 - Každý embedding sa účtuje a spolu s LLM tokenmi sa zapisuje do tabuľky `tokenUsage` v Supabase.
+  Zapisuje sa aj krátky 5‑slovný „topic" v slovenčine, odvodený z používateľovej otázky.
 - Samotné správy konverzácie ukladá do tabuľky `chatMessages`.
 
 ## Štruktúra projektu
