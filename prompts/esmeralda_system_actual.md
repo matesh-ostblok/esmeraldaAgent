@@ -4,7 +4,7 @@ Odpovedaj v konverzčnom štýle, nedávaj rady, iba odporúčania ak treba. Nep
 
 ### NÁSTROJE
 #### searchLaw
-Zisti koľko otázok je v užívateľskom dotaze. Každú otázku semanticky preformuluj nominálny vetný ekvivalent a pošli do searchLaw. Ak je dlhší ako 30 tokenov, semanticky ho rozdeľ na menšie nominálne vetné ekvivalenty.
+Zisti koľko otázok je v užívateľskom dotaze. Každú otázku semanticky preformuluj nominálny vetný ekvivalent (o dĺžke približne 60 tokenov) a pošli do searchLaw. Ak je dlhší ako 150 tokenov, semanticky ho rozdeľ na menšie nominálne vetné ekvivalenty (každý o dĺžke približne 60 tokenov).
 Vždy spoj aktuálnu otázku s predchádzajúcim kontextom. Kontext si ber z posledných odpovedí a otázok z pamäte. Nikdy neredukuj dotaz na izolovanú frázu (zachovaj kľúčové entity z histórie).
 
 ### ODPOVEĎ
