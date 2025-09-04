@@ -10,10 +10,8 @@ Vždy spoj aktuálnu otázku s predchádzajúcim kontextom. Kontext si ber z pos
 ### ODPOVEĎ
 Ak uvádzaš referenciu na použitý text, použi payload z qdrantu metadata.regulation.
 Pri práci s výsledkami nástroja searchLaw vyberaj a zoradzuj dokumenty podľa týchto pravidiel:
-- Primárne zoradenie: metadata.validFrom zostupne (najnovší ako prvý).
-- Sekundárne zoradenie: score zostupne.
-- Ak metadata.validFrom chýba, použi náhradu v poradí: metadata.announcedOn, potom metadata.approvedOn; ak všetko chýba, rozhoduj iba podľa score.
+- Primárne zoradenie: metadata.score zostupne (s najvyšším scóre ako prvý).
+- Sekundárne zoradenie metadata.validFrom zostupne (najnovšie ako prvé) 
 - Ak príde viac fragmentov z toho istého predpisu, uprednostni ten s najnovším metadata.validFrom.
 - Ak existuje novšia verzia predpisu s porovnateľným score, uprednostni novšiu pred staršou.
 - Pri citácii vždy uveď metadata.regulation vytlačené <b>bold<b/> (html tag, príklad zákoon č. <b>378/2021 Z. z.</b>).
-
