@@ -1,18 +1,18 @@
 # esmeraldaAgent
 **Esmeralda** je AI právna asistentka pre Slovlex.  
 Používa model `gpt-5-mini`, ktorý dopĺňa o vyhľadávanie v databáze zákonov uložených v Qdrante.  
-Správy a spotrebu tokenov zapisuje do Supabase.
+Správy a spotrebu tokenov zapisuje webová aplikácia do Supabase (agent už nezapisuje priamo).
 ## Ako funguje
 - Otázky používateľa spracováva `agent.py` pomocou OpenAI Agents SDK.
 - Kontext (relevantné paragrafy zákonov) získava z Qdrant kolekcie.
 - Na vyhľadávanie používa nástroj `searchLaw` v súbore `tools/searchLaw.py`.
-- Každý embedding sa účtuje a spolu s LLM tokenmi sa zapisuje do tabuľky `tokenUsage` v Supabase.
-  Zapisuje sa aj krátky 5‑slovný „topic" v slovenčine, odvodený z používateľovej otázky.
+- Každý embedding sa účtuje a spolu s LLM tokenmi sa zapisuje do tabuľky `tokenUsage` v Supabase webovou aplikáciou.
+  Krátky 5‑slovný „topic" generuje lacný LLM na strane webu; agent túto hodnotu nevypočítava.
 - Samotné správy konverzácie ukladá do tabuľky `chatMessages`.
 
 ## Štruktúra projektu
 
-- `agent.py`: definícia agenta, stream behu, ukladanie správ a usage do Supabase.
+- `agent.py`: definícia agenta a stream behu (bez priamych zápisov do DB; usage vracia ako metadáta).
 - `app.py`: FastAPI server so SSE endpointom `/chat`.
 - `tools/searchLaw.py`: nástroj `searchLaw` (Qdrant vyhľadávanie + embedding cez OpenAI).
 ## Spustenie cez Python (jednorazovo)
@@ -27,10 +27,10 @@ python agent.py "748h7d6c-54g3-4cfc-98fs-ed808d55cd70" "Jozef" "Ako dlho môžem
 ```
 
 Tento spôsob spustí funkciu `run_once`, ktorá:
-- uloží správu používateľa,
+- uloží správu používateľa (robí webová aplikácia),
 - pridá kontext z pamäti,
 - spustí agenta so streamovaním odpovede,
-- zapíše správu asistenta a usage tokenov do DB.
+- vráti usage tokenov ako metadáta pre webovú aplikáciu, ktorá ich zapíše do DB.
 
 ## Spustenie cez FastAPI (SSE)
 

@@ -43,25 +43,7 @@ def _build_usage_record(
         "embedding_input_tokens": int(embedding_input_tokens or 0),
     }
 
-def _extract_topic(text: str, max_words: int = 5) -> str:
-    """Unicode-safe 5-word topic summary derived from the user prompt.
-    Keeps word characters (unicode) and spaces, removes punctuation, drops simple stopwords, returns up to N tokens.
-    """
-    if not text:
-        return ""
-    import re as _re
-    cleaned = _re.sub(r"[\n\r\t]", " ", text.lower())
-    cleaned = _re.sub(r"[^\w\s]", " ", cleaned)
-    tokens = [t for t in cleaned.split() if t]
-    stop = {
-        # Slovak only
-        "a","aj","alebo","ale","sa","som","sme","ste","si","by","byť","ma","mi","mu","ti","to","je","sú","bol","bola","boli","bude","budú","na","v","vo","z","zo","do","od","pre","pod","nad","pri","o","u","k","ku","ako","že","ktorý","ktora","ktoré","ktorá","čo","kde","prečo","toto","táto","ten","tá","tí","tie","nej","svoj","svoje","svojho","svojeho",
-    }
-    kept = [t for t in tokens if t not in stop]
-    if not kept:
-        orig = [t for t in text.split() if t]
-        return " ".join(orig[:max_words])
-    return " ".join(kept[:max_words])
+## Topic generation moved to Website; no agent-side topic extraction.
 
 ## Memory is now passed in from the website (already trimmed/ordered).
 
