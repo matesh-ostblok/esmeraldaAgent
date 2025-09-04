@@ -15,6 +15,15 @@ Správy a spotrebu tokenov zapisuje webová aplikácia do Supabase (agent už ne
 - `agent.py`: definícia agenta a stream behu (bez priamych zápisov do DB; usage vracia ako metadáta).
 - `app.py`: FastAPI server so SSE endpointom `/chat`.
 - `tools/searchLaw.py`: nástroj `searchLaw` (Qdrant vyhľadávanie + embedding cez OpenAI).
+
+### Server-side pamäť (predvolene zapnutá)
+
+- Agent používa Agents SDK `SQLiteSession` a udržiava konverzačnú históriu lokálne v SQLite (súbor `agents_memory.sqlite3`).
+- Webová aplikácia už nemusí posielať celé `history`; stačí `uid`, `name`, `prompt`. Agent si predchádzajúce správy načíta zo svojej DB a nové správy do nej zapíše.
+- Premenné prostredia:
+  - `USE_AGENTS_SESSION=0` — vypne lokálnu SQLite pamäť (default je zapnuté)
+  - `AGENTS_SQLITE_PATH=/var/esmeralda/agents_memory.sqlite3` (voliteľné; default je `./agents_memory.sqlite3` vedľa kódu)
+- Poznámka: Ukladanie správ pre UI (Supabase) ostáva na webe. Agent vracia len usage metadáta; web si zapisuje svoje správy nezávisle od agentovej SQLite.
 ## Spustenie cez Python (jednorazovo)
 
 ```bash
@@ -83,6 +92,10 @@ QDRANT_COLLECTION=esmeralda     # (voliteľné, default je "esmeralda")
 # Supabase
 SUPABASE_URL=https://...supabase.co
 SUPABASE_KEY=...
+
+# Agents SDK session (predvolene zapnuté)
+# USE_AGENTS_SESSION=0
+# AGENTS_SQLITE_PATH=/var/esmeralda/agents_memory.sqlite3
 ```
 
 ## Inštalácia závislostí
@@ -91,4 +104,4 @@ SUPABASE_KEY=...
 pip install -r requirements.txt
 ```
 
-Poznámka: `.env` sa načítava v `agent.py` aj v `tools/searchLaw.py` (idempotentne), aby bolo možné použiť nástroj aj samostatne.
+Poznámka: `.env` sa načítava v `agent.py` aj v `tools/searchLaw.py` s `override=True`, takže hodnoty z `.env` majú prednosť pred systémovými premennými prostredia.

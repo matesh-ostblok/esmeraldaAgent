@@ -4,7 +4,10 @@ import sys
 from typing import List, Dict, Any
 
 from dotenv import load_dotenv
-load_dotenv()
+from pathlib import Path
+# Force-load .env from this folder, overriding any preset env vars
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
 from openai import OpenAI
 from agents import function_tool
