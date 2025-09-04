@@ -46,10 +46,18 @@ async def sse_chat_stream(uid: str, name: str, prompt: str, history: list | None
     header_done = True
     header_buffer = ""
 
+    usage_info = {}
+
     async def _runner():
         writer = _QueueWriter(q)
         with redirect_stdout(writer):
-            await run_once(uid, name, prompt, memory=history or [])
+            try:
+                result = await run_once(uid, name, prompt, memory=history or [])
+            except Exception:
+                result = {}
+            # Capture usage info from the agent (if any)
+            if isinstance(result, dict):
+                usage_info.update(result)
         await q.put("__RUN_DONE__")
 
     task = asyncio.create_task(_runner())
@@ -90,6 +98,14 @@ async def sse_chat_stream(uid: str, name: str, prompt: str, history: list | None
             await asyncio.wait_for(task, timeout=5)
         except Exception:
             task.cancel()
+
+    # Emit usage metadata for Website to persist (not shown as text to end users)
+    try:
+        if usage_info:
+            payload = ("data: " + json.dumps({"usage": usage_info}) + "\n\n").encode("utf-8")
+            yield payload
+    except Exception:
+        pass
 
     yield b'data: {"done": true}\n\n'
 

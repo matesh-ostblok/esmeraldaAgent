@@ -14,16 +14,17 @@ from supabase import create_client, Client
 
 from tools.searchLaw import searchLaw, usage_counters
 
-# Supabase klient
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Supabase client was used for token accounting previously.
+# Website now owns accounting; keep client unused to avoid breaking imports.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+sb: Client | None = None
 
 ## tools.searchLaw provides searchLaw tool and per-run embedding usage tracking
 
 ## Website is now responsible for persisting chat messages.
 
-def save_token_usage(
+def _build_usage_record(
     uid: str,
     model: str,
     input_tokens: int,
@@ -31,24 +32,16 @@ def save_token_usage(
     *,
     embedding_model: str | None = None,
     embedding_input_tokens: int = 0,
-    topic: str,
-) -> None:
-    """
-    Uloží token usage do public.tokenUsage v Supabase vrátane embeddingov.
-    """
-    payload = {
+) -> Dict[str, Any]:
+    """Prepare a structured usage record (no DB writes here)."""
+    return {
         "uid": uid,
         "model": model,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
+        "input_tokens": int(input_tokens or 0),
+        "output_tokens": int(output_tokens or 0),
         "embedding_model": embedding_model,
         "embedding_input_tokens": int(embedding_input_tokens or 0),
-        "topic": topic or "",
     }
-    try:
-        sb.table("tokenUsage").insert(payload).execute()
-    except Exception as e:
-        print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
 
 def _extract_topic(text: str, max_words: int = 5) -> str:
     """Unicode-safe 5-word topic summary derived from the user prompt.
@@ -84,7 +77,7 @@ esmeralda = Agent(
 )
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
-async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]] | None = None):
+async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
     # Log session header to stderr so it isn't streamed
     print(f"[UID: {uid}] [User: {name}] -> {prompt}", file=sys.stderr)
     # Reset per-run embedding usage counters
@@ -150,20 +143,18 @@ async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]
             print(f"[Token Usage] Could not parse usage fields: {e}", file=sys.stderr)
     else:
         print("[Token Usage] Usage not available; will record embedding usage only if present.", file=sys.stderr)
-    try:
-        # Vždy zapíš; ak LLM usage nie je, ostanú 0/0 a uloží sa aspoň embedder
-        topic = _extract_topic(prompt, max_words=5)
-        save_token_usage(
-            uid,
-            esmeralda.model,
-            in_tok,
-            out_tok,
-            embedding_model=usage_counters.get("embedding_model"),
-            embedding_input_tokens=int(usage_counters.get("embedding_tokens", 0) or 0),
-            topic=topic,
-        )
-    except Exception as e:
-        print(f"[Supabase] Token usage insert error: {e}", file=sys.stderr)
+    # Build usage record for the Website to persist
+    usage_record = _build_usage_record(
+        uid,
+        esmeralda.model,
+        in_tok,
+        out_tok,
+        embedding_model=usage_counters.get("embedding_model"),
+        embedding_input_tokens=int(usage_counters.get("embedding_tokens", 0) or 0),
+    )
+
+    # Return usage_record so the FastAPI SSE layer can emit it as metadata.
+    return usage_record
 
 if __name__ == "__main__":
     import sys
