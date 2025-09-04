@@ -13,6 +13,12 @@ load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
 from agents import Agent, Runner  # Agents SDK
 from supabase import create_client, Client
+from memory.sqlite_store import (
+    build_input as mem_build_input,
+    record_user as mem_record_user,
+    record_assistant as mem_record_assistant,
+    use_memory as mem_use,
+)
 
 from tools.searchLaw import searchLaw, usage_counters
 
@@ -60,37 +66,7 @@ esmeralda = Agent(
     tools=[searchLaw],
 )
 
-# --- Optional: Agents SDK session-backed memory (server-side) ---
-# Enabled by default. Set USE_AGENTS_SESSION=0 to disable.
-USE_AGENTS_SESSION = os.environ.get("USE_AGENTS_SESSION", "1").strip() not in ("", "0", "false", "False")
-AGENTS_SQLITE_PATH = os.environ.get("AGENTS_SQLITE_PATH", str((Path(__file__).parent / "agents_memory.sqlite3").resolve()))
-
-_SESSION_AVAILABLE = False
-try:
-    # Import lazily; if not available, we fall back to website-provided memory
-    from agents.memory.sqlite_session import SQLiteSession  # type: ignore
-    _SESSION_AVAILABLE = True
-except Exception:
-    _SESSION_AVAILABLE = False
-
-def _ensure_parent(path: Path) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-
-def _get_session(uid: str):
-    """Create or open a SQLite-backed session for given uid, if enabled/available."""
-    if not (USE_AGENTS_SESSION and _SESSION_AVAILABLE and uid):
-        return None
-    db_path = Path(AGENTS_SQLITE_PATH)
-    _ensure_parent(db_path)
-    try:
-        # session_id groups items per user/session; SQLiteSession handles schema internally
-        return SQLiteSession(db_path=str(db_path), session_id=uid)
-    except Exception as e:
-        print(f"[Session] Failed to create SQLiteSession: {e}", file=sys.stderr)
-        return None
+# Memory management is implemented in memory/sqlite_store.py
 
 # --- Jednorazový beh so streamom (ak chceš test bez chatu) ---
 async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
@@ -99,27 +75,18 @@ async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]
     # Reset per-run embedding usage counters
     usage_counters["embedding_tokens"] = 0
     usage_counters["embedding_model"] = "text-embedding-3-small"
-    # Determine memory strategy: Agents Session (server-side) vs website-supplied history
-    session = _get_session(uid)
-    use_session = session is not None
-
-    if use_session:
-        # With session, pass only the new user prompt; the runner will read/write history
-        enriched_input = prompt
-    else:
-        # Použi pamäť dodanú z webu (max ~10 položiek, chronologicky)
-        mem_rows = memory or []
-        if mem_rows:
-            memory_block = "\n".join([f"{r['role']}: {r['content']}" for r in mem_rows])
-            enriched_input = f"[MEMORY]\n{memory_block}\n[/MEMORY]\n\n[USER QUESTION]\n{prompt}"
-        else:
-            enriched_input = prompt
+    # Build enriched input using local SQLite memory if enabled; otherwise use fallback from website
+    use_session = mem_use()
+    enriched_input = mem_build_input(uid, prompt, fallback_history=(memory or []))
     # Apply per-request templating (supports optional {name} in prompt template)
     esmeralda.instructions = SYSTEM_PROMPT_TEMPLATE.format(name=name)
+    # Record current user prompt before running to preserve timeline
     if use_session:
-        result = Runner.run_streamed(esmeralda, input=enriched_input, session=session)
-    else:
-        result = Runner.run_streamed(esmeralda, input=enriched_input)
+        try:
+            mem_record_user(uid, prompt)
+        except Exception:
+            pass
+    result = Runner.run_streamed(esmeralda, input=enriched_input)
     buf = []
     usage = None
     async for ev in result.stream_events():
@@ -181,14 +148,12 @@ async def run_once(uid: str, name: str, prompt: str, memory: List[Dict[str, Any]
     )
 
     # Return usage_record so the FastAPI SSE layer can emit it as metadata.
-    try:
-        if session is not None:
-            # Close underlying DB handle if provided by SQLiteSession
-            close = getattr(session, "close", None)
-            if callable(close):
-                close()
-    except Exception:
-        pass
+    # Append assistant answer to local memory
+    if use_session:
+        try:
+            mem_record_assistant(uid, assistant_text)
+        except Exception:
+            pass
     return usage_record
 
 if __name__ == "__main__":

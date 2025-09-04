@@ -18,11 +18,18 @@ Správy a spotrebu tokenov zapisuje webová aplikácia do Supabase (agent už ne
 
 ### Server-side pamäť (predvolene zapnutá)
 
-- Agent používa Agents SDK `SQLiteSession` a udržiava konverzačnú históriu lokálne v SQLite (súbor `agents_memory.sqlite3`).
-- Webová aplikácia už nemusí posielať celé `history`; stačí `uid`, `name`, `prompt`. Agent si predchádzajúce správy načíta zo svojej DB a nové správy do nej zapíše.
+- Agent používa vlastnú minimalistickú SQLite pamäť v jednej tabuľke `conversation_memory` a ukladá iba čistý text:
+  - `role`: `user` alebo `assistant`
+  - `content`: text vstupu/výstupu
+  - `created_at`: čas vloženia
+  (bez interných udalostí a tool volaní)
+- Webová aplikácia už nemusí posielať celé `history`; stačí `uid`, `name`, `prompt`. Agent si predchádzajúce odpovede načíta zo svojej DB a novú odpoveď do nej zapíše.
 - Premenné prostredia:
   - `USE_AGENTS_SESSION=0` — vypne lokálnu SQLite pamäť (default je zapnuté)
   - `AGENTS_SQLITE_PATH=/var/esmeralda/agents_memory.sqlite3` (voliteľné; default je `./agents_memory.sqlite3` vedľa kódu)
+  - `MEMORY_LIMIT=10` — koľko posledných odpovedí sa použije ako kontext
+  - `MEMORY_MAX_ROWS=200` — koľko posledných záznamov (user+assistant) sa uchováva v DB na používateľa (staršie sa pribežne orezávajú)
+  - `VACUUM_INTERVAL_HOURS=24` — ako často sa pokúsi agent spustiť `VACUUM` (min. 1h); spúšťa sa nenápadne po zápise odpovede
 - Poznámka: Ukladanie správ pre UI (Supabase) ostáva na webe. Agent vracia len usage metadáta; web si zapisuje svoje správy nezávisle od agentovej SQLite.
 ## Spustenie cez Python (jednorazovo)
 
